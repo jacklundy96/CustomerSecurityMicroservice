@@ -12,6 +12,7 @@ pool:
 variables:
   buildConfiguration: 'Release'
 
+
 steps:
-- script: dotnet build ./CustomerSec/CustomerSec.csproj --configuration $(buildConfiguration)
+- script: dotnet build ./CustomerSec.csproj --configuration $(buildConfiguration)
   displayName: 'dotnet build $(buildConfiguration)'
