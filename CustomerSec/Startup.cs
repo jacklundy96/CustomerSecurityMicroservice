@@ -16,12 +16,14 @@ using CustomerSec.Helpers;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
-using CustomerSec.Services;
 using Microsoft.Extensions.Logging;
 using System.IdentityModel.Tokens.Jwt;
+using System.IO;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Authorization;
 using CustomerSec.Entities;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity.UI.Services;
 
 namespace CustomerSec
@@ -38,39 +40,10 @@ namespace CustomerSec
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-
             services.AddCors();     
-
             //configure settings objects
             var appSettingsSection = Configuration.GetSection("AppSettings");
             services.Configure<AppSettings>(appSettingsSection);
-
-            ////configure JWT Auth
-            var appSettings = appSettingsSection.Get<AppSettings>();
-            var key = Encoding.ASCII.GetBytes(appSettings.JwtKey);
-       
-            services.AddAuthentication(x =>
-            {
-                //x.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-                x.DefaultAuthenticateScheme = Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme;
-                x.DefaultChallengeScheme = Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme;
-
-
-            }).AddJwtBearer(x =>
-            {
-                x.RequireHttpsMetadata = false;
-                x.SaveToken = true;
-                x.TokenValidationParameters = new TokenValidationParameters
-                {
-                    IssuerSigningKey = new SymmetricSecurityKey(key),
-                    RoleClaimType = "roles",
-                    ValidateIssuer = false,
-                    ValidateAudience = false
-                };
-            }).AddCookie();
-
-            services.AddScoped<IUserService, UserService>();
-
             services.AddDbContext<ApplicationDbContext>(options =>
                 options.UseSqlServer(
                     Configuration.GetConnectionString("DefaultConnection")));
@@ -97,13 +70,53 @@ namespace CustomerSec
                 "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._@+";
                 options.User.RequireUniqueEmail = true;
 
-                options.SignIn.RequireConfirmedEmail = true;
+                options.SignIn.RequireConfirmedEmail = false;
                 options.SignIn.RequireConfirmedPhoneNumber = false;
             });
             
             services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
 
-            services.AddMvc();
+            services.ConfigureApplicationCookie(options =>
+            {
+                options.Cookie.Name = ".Thamco.Cookie";
+            });
+
+            services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo("..")).SetApplicationName("ThamCo");
+            
+            //configure JWT Auth, developer options should be changed to deployed location in deployment
+            var appSettings = appSettingsSection.Get<AppSettings>();
+            services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+                .AddJwtBearer(options => 
+                {
+                    options.TokenValidationParameters = new TokenValidationParameters()
+                    {
+                        ValidateIssuer = true,
+                        ValidIssuer = "localhost:44399",
+
+                        ValidateAudience = true,
+                        ValidAudience =  "localhost",
+
+                        ValidateLifetime = true,
+
+                        ValidateIssuerSigningKey = true,
+                        IssuerSigningKey =  new SymmetricSecurityKey(Encoding.UTF8.GetBytes(appSettings.JwtKey))
+                    };
+                    options.SaveToken = true;
+                });
+
+
+            services.AddMvc(options =>
+            {
+                var policy = new AuthorizationPolicyBuilder()
+                    .RequireAuthenticatedUser()
+                    .Build();
+                options.Filters.Add(new AuthorizeFilter(policy));
+            }).SetCompatibilityVersion(CompatibilityVersion.Version_2_1);
+
+            services.AddAuthorization(options =>
+            {
+                options.AddPolicy("ReisteredUsersOnly", policy => policy.RequireClaim("UserID"));
+            });
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -130,9 +143,7 @@ namespace CustomerSec
                 .AllowAnyMethod()
                 .AllowAnyHeader()
                 .AllowCredentials());
-
             app.UseAuthentication();
-
             app.UseMvc();
         }
     }
