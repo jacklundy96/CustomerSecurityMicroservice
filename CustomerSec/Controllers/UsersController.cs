@@ -48,9 +48,7 @@ namespace CustomerSec.Controllers
                 foreach (var param in userParam.GetAll())
                     if (param == null)
                         return BadRequest("Incomplete registration information was supplied");
-
-
-               
+                
                 var user = new IdentityUser
                     {UserName = userParam.Email, Email = userParam.Email, PhoneNumber = userParam.PhoneNumber};
               
